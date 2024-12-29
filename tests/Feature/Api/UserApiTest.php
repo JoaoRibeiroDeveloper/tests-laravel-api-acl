@@ -1,9 +1,15 @@
 <?php
 
+use Illuminate\Support\Str;
 use App\Http\Middleware\ACLMiddleware;
 use App\Models\User;
 
+use function Pest\Laravel\assertDatabaseHas;
+use function Pest\Laravel\assertDatabaseMissing;
+use function Pest\Laravel\deleteJson;
 use function Pest\Laravel\getJson;
+use function Pest\Laravel\postJson;
+use function Pest\Laravel\putJson;
 use function Pest\Laravel\withoutMiddleware;
 
 beforeEach(function () {
@@ -93,4 +99,138 @@ test('should return users with filter', function () {
 
     expect(count($response['data']))->toBe(7);
     expect($response['meta']['total'])->toBe(7);
+});
+
+test('should create new user', function () {
+    $response = postJson(
+        route('users.store') ,
+        [
+            'name' => 'John Doe',
+            'email' => 'john@example.com',
+            'password' => 'password',
+        ],
+        ['Authorization' => "Bearer {$this->token}"],
+    )->assertCreated();
+
+    assertDatabaseHas('users', [
+        'id' => $response['data']['id'],
+        'name' => 'John Doe',
+        'email' => 'john@example.com',
+    ]);
+});
+
+test('should return user', function () {
+    $response = getJson(
+        route('users.show', $this->user->id),
+        ['Authorization' => "Bearer {$this->token}"],
+    )
+    ->assertOk()
+    ->assertJsonStructure([
+        'data' => ['id', 'name', 'email', 'permissions' => []]
+    ]);
+
+    expect($response['data']['name'])->toBe($this->user->name);
+    expect($response['data']['email'])->toBe($this->user->email);
+});
+
+test('should return 404 when user not found', function () {
+    getJson(
+        route('users.show', 'fake_id'),
+        ['Authorization' => "Bearer {$this->token}"],
+    )
+    ->assertNotFound();
+});
+
+test('should update user', function () {
+    putJson(
+        route('users.update', $this->user->id),
+        ['name' => 'John Doe Updated'],
+        ['Authorization' => "Bearer {$this->token}"],
+    )->assertOk();
+
+    assertDatabaseHas('users', [
+        'id' => $this->user->id,
+        'name' => 'John Doe Updated',
+    ]);
+});
+
+test('should return 404 when not exists user', function () {
+    putJson(
+        route('users.update', 'fake_id'),
+        ['name' => 'John Doe Updated'],
+        ['Authorization' => "Bearer {$this->token}"],
+    )->assertNotFound();
+});
+
+test('should delete user', function () {
+    deleteJson(
+        route('users.destroy', $this->user->id),
+        [],
+        ['Authorization' => "Bearer {$this->token}"],
+    )->assertNoContent();
+
+    assertDatabaseMissing('users', ['id' => $this->user->id]);
+});
+
+test('should return 404 when not exists user - delete', function () {
+    deleteJson(
+        route('users.destroy', 'fake_id'),
+        [],
+        ['Authorization' => "Bearer {$this->token}"],
+    )->assertNotFound();
+});
+
+describe('validations', function () {
+    test('should validate create new user', function () {
+        postJson(
+            route('users.store'),
+            [],
+            ['Authorization' => "Bearer {$this->token}"],
+        )
+        ->assertStatus(422)
+        ->assertJsonValidationErrors([
+            'name' => trans('validation.required', ['attribute' => 'name']),
+            'email' => trans('validation.required', ['attribute' => 'email']),
+            'password' => trans('validation.required', ['attribute' => 'password'])
+        ]);
+    });
+    test('should validate update user', function () {
+        putJson(
+            route('users.update', $this->user->id),
+            [],
+            ['Authorization' => "Bearer {$this->token}"],
+        )
+        ->assertStatus(422)
+        ->assertJsonValidationErrors([
+            'name' => trans('validation.required', ['attribute' => 'name'])
+        ]);
+    });
+    test('should validate update user - with password less 6 characters', function () {
+        putJson(
+            route('users.update', $this->user->id),
+            [
+                'name' => 'John Doe',
+                'password' => '123',
+            ],
+            ['Authorization' => "Bearer {$this->token}"],
+        )
+        ->assertStatus(422)
+        ->assertJsonValidationErrors([
+            'password' => trans('validation.min.string', ['attribute' => 'password', 'min' => 6])
+        ]);
+    });
+    test('should validate update user - The password field must not be greater than 20 characters', function () {
+        putJson(
+            route('users.update', $this->user->id),
+            [
+                'name' => 'John Doe',
+                'password' => Str::random(50),
+            ],
+            ['Authorization' => "Bearer {$this->token}"],
+        )
+        ->assertStatus(422)
+        ->assertJsonValidationErrors([
+            'password' => trans('validation.max.string', ['attribute' => 'password', 'max' => 20])
+        ]);
+    });
 });
