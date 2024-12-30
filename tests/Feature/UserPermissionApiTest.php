@@ -53,3 +53,10 @@ test('should sync permissions of user', function () {
     assertDatabaseCount('permission_user', 10);
 });
 
+test('should validate permissions', function () {
+    postJson(
+        route('users.permissions.sync', $this->user->id),
+        ['permissions' => ['fake_id_permission']],
+        ['Authorization' => "Bearer {$this->token}"]
+    )->assertStatus(422);
+});
