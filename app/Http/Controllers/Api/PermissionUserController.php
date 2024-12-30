@@ -11,7 +11,7 @@ use Illuminate\Http\Response;
 class PermissionUserController extends Controller
 {
     public function __construct(private UserRepository $userRepository)
-    { 
+    {
     }
 
     public function syncPermissionsOfUser(string $id, Request $request)
